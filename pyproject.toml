@@ -1,0 +1,40 @@
+[project]
+name = "blogging-agent"
+version = "0.1.0"
+description = "Blogging agent that generates blog posts based on user input and posts them to a blogging platform."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "crewai>=1.14.4",
+    "crewai-tools>=1.14.4",
+    "fastapi>=0.115.5",
+    "ipykernel>=7.2.0",
+    "pydantic-settings>=2.10.1,<2.11.0",
+    "python-dotenv>=1.2.2",
+    "redis>=6.4.0",
+    "requests>=2.32.5",
+    "uvicorn>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[project.scripts]
+blogging-agent = "advanced.main:main"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["advanced*"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

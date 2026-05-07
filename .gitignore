@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Test / coverage tooling
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv
+
+# OS metadata
+.DS_Store
+
+# Runtime artifacts
+data/cache/*.json
+data/outputs/*
+!data/outputs/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
