@@ -1,4 +1,4 @@
-"""Writer agent — production version of Demo/04_content_writer_agent.ipynb."""
+"""Writer agent — production version of demo/04_content_writer_agent.ipynb."""
 
 from crewai import Agent, LLM
 

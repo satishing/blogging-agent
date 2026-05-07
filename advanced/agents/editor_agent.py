@@ -1,4 +1,4 @@
-"""Editor agent — production version of Demo/05_editor_agent.ipynb."""
+"""Editor agent — production version of demo/05_editor_agent.ipynb."""
 
 from crewai import Agent, LLM
 

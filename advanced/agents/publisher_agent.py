@@ -1,4 +1,4 @@
-"""Publisher agent — production version of Demo/06_publish_agent.ipynb."""
+"""Publisher agent — production version of demo/06_publish_agent.ipynb."""
 
 from crewai import Agent, LLM
 

@@ -9,12 +9,15 @@ Production-grade backend for technical AI blogging:
 
 ## Learning path
 
-This repo has two parts:
+All three folders solve the **same problem** — a four-agent blogging pipeline (research → write → edit → publish to Dev.to). They differ only in the level of structure and production polish:
 
-| Folder      | Audience                         | Purpose                                                                                                                                     |
-|-------------|----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `Demo/`     | New AI agent learners            | Six Jupyter notebooks that grow a single LLM call into a 4-agent pipeline. Read these **first**.                                            |
-| `advanced/` | Engineers shipping to production | The same pipeline wrapped in caching, FastAPI, rate limiting, idempotent publishing, and source-freshness retries. Read after Demo Step 06. |
+| Folder      | Format                             | Production concerns                                     | Audience                                                        |
+|-------------|------------------------------------|---------------------------------------------------------|-----------------------------------------------------------------|
+| `demo/`     | Six Jupyter notebooks              | None — exploratory, builds up step by step              | First-time learners. Each notebook adds one new concept.        |
+| `basic/`    | Structured Python with `@CrewBase` | None — clean reference for the decorator pattern        | Python developers who want a single readable end-to-end script. |
+| `advanced/` | Structured Python with factories   | Caching, idempotent publishing, FastAPI, retries, tests | Engineers shipping the agent to production.                     |
+
+Suggested order: **`demo/` → `basic/` → `advanced/`**. The notebooks teach the moving parts; `basic/` shows the same end-to-end pipeline as a structured program using CrewAI's decorator scaffold; `advanced/` is what production looks like once you wrap that pipeline in caching, idempotency, an HTTP API, and tests.
 
 Recommended reading order inside `advanced/`: `agents/` → `tasks/` → `tools/` → `services/crew_service.py` → `main.py`. The rest is infrastructure (settings, cache, security middleware).
 
@@ -43,7 +46,24 @@ publishingService --> cacheService
 
 ```text
 blogging-agent/
-├── Demo/                     # Notebooks for first-time AI agent learners
+├── basic/                    # End-to-end pipeline using @CrewBase decorators
+│   ├── README.md             # intro to both variants below
+│   ├── yaml_variant/         # Agent/task definitions in YAML (CrewAI's default scaffold)
+│   │   ├── config/
+│   │   │   ├── agents.yaml
+│   │   │   └── tasks.yaml
+│   │   ├── crew.py           # Agent(config=...) / Task(config=...)
+│   │   ├── tools.py          # custom DevToPublishTool
+│   │   ├── main.py           # python -m basic.yaml_variant.main
+│   │   └── README.md
+│   └── code_variant/         # Agent/task definitions in Python factories
+│       ├── agents.py
+│       ├── tasks.py
+│       ├── crew.py
+│       ├── tools.py          # identical copy — variants stay independent
+│       ├── main.py           # python -m basic.code_variant.main
+│       └── README.md         # (no config/ — this variant doesn't use YAML)
+├── demo/                     # Notebooks for first-time AI agent learners
 │   ├── 01_init.ipynb
 │   ├── 02_research_agent.ipynb
 │   ├── 03_research_agent_with_tool.ipynb

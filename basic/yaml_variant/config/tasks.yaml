@@ -1,0 +1,47 @@
+# Declarative task definitions.
+#
+# Each top-level key (research, writing, ...) becomes an entry in
+# self.tasks_config inside the @CrewBase class. Field names mirror the
+# Task(...) constructor: description, expected_output, agent, context.
+#
+# - `agent:` references an entry in agents.yaml by key — @CrewBase resolves
+#   it to the actual Agent instance returned by the matching @agent method.
+# - `context:` is a list of task names; @CrewBase resolves them to Task
+#   instances the same way.
+# - `{topic}` is interpolated at runtime by `kickoff(inputs={"topic": ...})`.
+
+research:
+  description: >
+    Research {topic}. Use the search tool. Collect the most recent,
+    credible sources and pull out the key points.
+  expected_output: A short bullet-point summary with each point followed by its source URL.
+  agent: researcher
+
+writing:
+  description: >
+    Write a blog post about {topic} for technical readers, using only the
+    information in the research notes. Keep paragraphs short.
+    Include source links inline.
+  expected_output: A clear, well-structured Markdown blog post.
+  agent: writer
+  context:
+    - research
+
+editing:
+  description: >
+    Convert the Markdown blog post into a single JSON object with keys:
+    title (string), tags (list of up to 4 short strings), content (markdown).
+    Return only the JSON, no commentary, no code fences.
+  expected_output: '{"title": "...", "tags": ["ai"], "content": "..."}'
+  agent: editor
+  context:
+    - writing
+
+publishing:
+  description: >
+    Use the publish_to_devto tool exactly once with the JSON object
+    produced by the editor. Return the tool's response verbatim.
+  expected_output: The exact JSON response from the Dev.to publish API.
+  agent: publisher
+  context:
+    - editing

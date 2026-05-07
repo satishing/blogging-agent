@@ -1,4 +1,4 @@
-"""Research task — production version of Demo/03_research_agent_with_tool.ipynb."""
+"""Research task — production version of demo/03_research_agent_with_tool.ipynb."""
 
 from crewai import Agent, Task
 

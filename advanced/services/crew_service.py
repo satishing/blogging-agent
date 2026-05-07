@@ -41,9 +41,9 @@ class CrewService:
 
     See:
       - `_run_content_pipeline` for the year-by-year source accumulation strategy
-        (the only piece without a Demo equivalent).
+        (the only piece without a demo equivalent).
       - `_run_publish_pipeline` for the multi-agent publish flow that mirrors
-        Demo Step 06, with idempotency-cache fallback for unparseable agent output.
+        demo Step 06, with idempotency-cache fallback for unparseable agent output.
     """
 
     def __init__(
@@ -98,7 +98,7 @@ class CrewService:
     def _run_content_pipeline(self, *, topic: str, min_year: int) -> BlogDraft:
         """Run the research/write/edit crew, falling back year-by-year on freshness.
 
-        Why this loop exists: Demo Step 03 shows a single research run. In production,
+        Why this loop exists: demo Step 03 shows a single research run. In production,
         Serper sometimes returns too few sources from the requested `min_year`. Rather
         than fail, we accumulate sources across `min_year`, `min_year - 1`, ..., down
         to `min_year - source_year_retry_steps`, dedup by URL, and stop as soon as we

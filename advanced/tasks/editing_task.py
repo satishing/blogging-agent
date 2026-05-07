@@ -1,4 +1,4 @@
-"""Editing task — production version of Demo/05_editor_agent.ipynb."""
+"""Editing task — production version of demo/05_editor_agent.ipynb."""
 
 from crewai import Agent, Task
 

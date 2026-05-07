@@ -1,4 +1,4 @@
-# Demo — Build an AI Agent From Scratch
+# demo — Build an AI Agent From Scratch
 
 A six-step walkthrough that grows a single LLM call into a research → write → edit → publish multi-agent pipeline using CrewAI.
 
@@ -17,7 +17,7 @@ Run them in order — each step builds on the previous and the "What's New" sect
 
 ## Required environment variables
 
-Create `.env` at the repo root (one level up from `Demo/`):
+Create `.env` at the repo root (one level up from `demo/`):
 
 ```bash
 OPENROUTER_API_KEY=...     # steps 01-06
