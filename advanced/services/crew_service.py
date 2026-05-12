@@ -92,7 +92,9 @@ class CrewService:
         output_key = CacheService.make_key(
             "pipeline-output", topic.lower().strip(), str(min_year)
         )
-        self._cache.set_json(output_key, result.model_dump(mode="json"), ttl_seconds=86400)
+        self._cache.set_json(
+            output_key, result.model_dump(mode="json"), ttl_seconds=86400
+        )
         return result
 
     def _run_content_pipeline(self, *, topic: str, min_year: int) -> BlogDraft:
@@ -113,7 +115,9 @@ class CrewService:
         for offset in range(self._settings.source_year_retry_steps + 1):
             attempt_year = min_year - offset
             try:
-                attempt_blog = self._run_content_pipeline_for_year(topic=topic, min_year=attempt_year)
+                attempt_blog = self._run_content_pipeline_for_year(
+                    topic=topic, min_year=attempt_year
+                )
             except SourceGuardrailError as error:
                 logger.warning(
                     "Year %s attempt failed source guardrail before accumulation: %s",
@@ -180,7 +184,9 @@ class CrewService:
             min_year=min_year,
             min_sources=self._settings.min_sources,
         )
-        writing_task = build_writing_task(agent=writer_agent, research_task=research_task)
+        writing_task = build_writing_task(
+            agent=writer_agent, research_task=research_task
+        )
         editing_task = build_editing_task(
             agent=editor_agent,
             writing_task=writing_task,
@@ -202,7 +208,9 @@ class CrewService:
 
     def _run_publish_pipeline(self, *, blog: BlogDraft) -> PublishResult:
         publish_tool = DevToPublisherTool(publishing_service=self._publishing_service)
-        publisher_agent = build_publisher_agent(llm=self._llm, publish_tool=publish_tool)
+        publisher_agent = build_publisher_agent(
+            llm=self._llm, publish_tool=publish_tool
+        )
         publishing_task = build_publishing_task(agent=publisher_agent)
 
         crew = Crew(
@@ -277,4 +285,6 @@ class CrewService:
         if attempt_year == base_year:
             cutoff = date(base_year, 1, 1)
             return [source for source in sources if source.published_date >= cutoff]
-        return [source for source in sources if source.published_date.year == attempt_year]
+        return [
+            source for source in sources if source.published_date.year == attempt_year
+        ]

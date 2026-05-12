@@ -50,13 +50,17 @@ class DevToPublisherClient:
         return PublishResult(
             platform="dev.to",
             status="published" if response_json.get("published") else "draft_created",
-            external_id=str(response_json.get("id")) if response_json.get("id") else None,
+            external_id=(
+                str(response_json.get("id")) if response_json.get("id") else None
+            ),
             url=response_json.get("url"),
             published_at=datetime.now(timezone.utc),
             raw_response=response_json,
         )
 
-    def _post_with_retry(self, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    def _post_with_retry(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
         attempts = 3
         last_error: Exception | None = None
         for attempt in range(1, attempts + 1):

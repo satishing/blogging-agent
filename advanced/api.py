@@ -72,7 +72,9 @@ def create_app():
 
         response = await call_next(request)
         if settings.api_rate_limit_enabled:
-            response.headers["X-RateLimit-Limit"] = str(settings.api_rate_limit_per_minute)
+            response.headers["X-RateLimit-Limit"] = str(
+                settings.api_rate_limit_per_minute
+            )
             response.headers["X-RateLimit-Remaining"] = str(remaining)
         return response
 

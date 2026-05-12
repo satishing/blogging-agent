@@ -42,4 +42,3 @@ class PipelineResult(BaseModel):
     blog: BlogDraft
     publish_result: PublishResult | None = None
     cached: bool = False
-

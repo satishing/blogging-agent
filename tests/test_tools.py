@@ -26,11 +26,12 @@ def test_search_client_normalizes_results(monkeypatch) -> None:
         ]
     }
 
-    monkeypatch.setattr(client, "_post_with_retry", lambda payload, headers: mock_response)
+    monkeypatch.setattr(
+        client, "_post_with_retry", lambda payload, headers: mock_response
+    )
     results = client.search("ai agents 2026")
 
     assert len(results) == 1
     assert results[0]["title"] == "AI agents in 2026"
     assert results[0]["url"] == "https://example.com/ai-agents"
     assert results[0]["published_date"].startswith("2026")
-

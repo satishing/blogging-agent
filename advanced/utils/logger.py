@@ -20,4 +20,3 @@ def setup_logging(log_level: str = "INFO", log_file: str | None = None) -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
-

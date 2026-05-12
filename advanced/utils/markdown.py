@@ -37,4 +37,3 @@ def estimate_read_minutes(content_markdown: str, words_per_minute: int = 220) ->
     if words == 0:
         return 0
     return max(1, round(words / words_per_minute))
-

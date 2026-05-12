@@ -14,12 +14,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Production blogging agent runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    generate = subparsers.add_parser("generate-and-publish", help="Generate blog and publish as draft")
+    generate = subparsers.add_parser(
+        "generate-and-publish", help="Generate blog and publish as draft"
+    )
     generate.add_argument("--topic", required=True)
     generate.add_argument("--min-year", type=int, default=None)
     generate.add_argument("--force-refresh", action="store_true")
 
-    generate_only = subparsers.add_parser("generate-only", help="Generate blog without publishing")
+    generate_only = subparsers.add_parser(
+        "generate-only", help="Generate blog without publishing"
+    )
     generate_only.add_argument("--topic", required=True)
     generate_only.add_argument("--min-year", type=int, default=None)
     generate_only.add_argument("--force-refresh", action="store_true")

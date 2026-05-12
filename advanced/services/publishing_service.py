@@ -23,7 +23,9 @@ class PublishingService:
 
     @staticmethod
     def build_idempotency_key(topic: str, title: str) -> str:
-        return CacheService.make_key("publish", topic.lower().strip(), title.lower().strip())
+        return CacheService.make_key(
+            "publish", topic.lower().strip(), title.lower().strip()
+        )
 
     def get_cached_publish(self, key: str) -> PublishResult | None:
         cached = self._cache.get_json(key)
@@ -40,6 +42,9 @@ class PublishingService:
         self._record_publish_result(idempotency_key=idempotency_key, result=result)
         return result
 
-    def _record_publish_result(self, *, idempotency_key: str, result: PublishResult) -> None:
-        self._cache.set_json(idempotency_key, result.model_dump(mode="json"), ttl_seconds=86400)
-
+    def _record_publish_result(
+        self, *, idempotency_key: str, result: PublishResult
+    ) -> None:
+        self._cache.set_json(
+            idempotency_key, result.model_dump(mode="json"), ttl_seconds=86400
+        )

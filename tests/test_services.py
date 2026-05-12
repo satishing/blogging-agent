@@ -108,7 +108,9 @@ def test_publish_pipeline_returns_agent_json(monkeypatch, tmp_path) -> None:
     settings = _test_settings(tmp_path)
     cache = CacheService(settings=settings)
     publishing = PublishingService(settings=settings, cache_service=cache)
-    service = CrewService(settings=settings, cache_service=cache, publishing_service=publishing)
+    service = CrewService(
+        settings=settings, cache_service=cache, publishing_service=publishing
+    )
     blog = _sample_blog()
 
     expected = PublishResult(
@@ -128,11 +130,15 @@ def test_publish_pipeline_returns_agent_json(monkeypatch, tmp_path) -> None:
     assert second.status == "duplicate_skipped"
 
 
-def test_publish_pipeline_recovers_from_junk_agent_output(monkeypatch, tmp_path) -> None:
+def test_publish_pipeline_recovers_from_junk_agent_output(
+    monkeypatch, tmp_path
+) -> None:
     settings = _test_settings(tmp_path)
     cache = CacheService(settings=settings)
     publishing = PublishingService(settings=settings, cache_service=cache)
-    service = CrewService(settings=settings, cache_service=cache, publishing_service=publishing)
+    service = CrewService(
+        settings=settings, cache_service=cache, publishing_service=publishing
+    )
     blog = _sample_blog()
 
     expected = PublishResult(
@@ -142,7 +148,9 @@ def test_publish_pipeline_recovers_from_junk_agent_output(monkeypatch, tmp_path)
         url="https://dev.to/example-888",
     )
     monkeypatch.setattr(publishing._devto_client, "publish", lambda _: expected)
-    _install_fake_crew(monkeypatch, raw_factory=lambda _: "I successfully published the blog.")
+    _install_fake_crew(
+        monkeypatch, raw_factory=lambda _: "I successfully published the blog."
+    )
 
     result = service._run_publish_pipeline(blog=blog)
 
@@ -215,7 +223,9 @@ def test_content_pipeline_retries_older_years(monkeypatch, tmp_path) -> None:
     assert attempted_years == [2026, 2025, 2024]
 
 
-def test_content_pipeline_accumulates_sources_across_years(monkeypatch, tmp_path) -> None:
+def test_content_pipeline_accumulates_sources_across_years(
+    monkeypatch, tmp_path
+) -> None:
     settings = _test_settings(tmp_path)
     settings.min_sources = 4
     settings.source_year_retry_steps = 3
@@ -256,4 +266,3 @@ def test_content_pipeline_accumulates_sources_across_years(monkeypatch, tmp_path
     assert len(blog.sources) == 4
     assert attempted_years == [2026, 2025, 2024]
     assert {source.published_date.year for source in blog.sources} == {2026, 2025, 2024}
-

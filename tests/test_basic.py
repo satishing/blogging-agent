@@ -22,6 +22,7 @@ _EXPECTED_AGENT_ROLES = ["Research Analyst", "Content Writer", "Editor", "Publis
 
 # ----- code_variant -----
 
+
 def test_code_variant_creates_four_agents_with_expected_roles() -> None:
     from basic.code_variant.crew import BloggingCrew
 
@@ -86,6 +87,7 @@ def test_code_variant_search_tool_is_shared_across_agents() -> None:
 
 # ----- yaml_variant -----
 
+
 def test_yaml_variant_creates_four_agents_from_yaml() -> None:
     from basic.yaml_variant.crew import BloggingCrew
 
@@ -119,6 +121,7 @@ def test_yaml_variant_resolves_yaml_context_refs_to_real_tasks() -> None:
 
 # ----- equivalence -----
 
+
 def test_both_variants_produce_equivalent_crews() -> None:
     from basic.code_variant.crew import BloggingCrew as CodeCrew
     from basic.yaml_variant.crew import BloggingCrew as YamlCrew
@@ -146,6 +149,7 @@ def test_both_variants_produce_equivalent_crews() -> None:
 
 
 # ----- DevToPublishTool -----
+
 
 class _FakeDevtoResponse:
     def __init__(self) -> None:

@@ -23,3 +23,9 @@ data/outputs/*
 !data/outputs/.gitkeep
 data/logs/*
 !data/logs/.gitkeep
+
+# IDE / editor files
+.idea/
+.vscode/
+.fleet/
+*.code-workspace

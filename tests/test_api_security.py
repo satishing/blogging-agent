@@ -27,7 +27,9 @@ def test_api_requires_key(monkeypatch) -> None:
     )
 
     client = TestClient(advanced_api.create_app())
-    response = client.post("/v1/blogs/generate", json={"topic": "AI safety", "publish": False})
+    response = client.post(
+        "/v1/blogs/generate", json={"topic": "AI safety", "publish": False}
+    )
     assert response.status_code == 401
 
 
@@ -50,7 +52,9 @@ def test_api_allows_valid_key(monkeypatch) -> None:
 
 
 def test_rate_limit_returns_429(monkeypatch) -> None:
-    monkeypatch.setattr(advanced_api, "get_settings", lambda: _api_settings(rate_limit_per_minute=1))
+    monkeypatch.setattr(
+        advanced_api, "get_settings", lambda: _api_settings(rate_limit_per_minute=1)
+    )
     monkeypatch.setattr(
         advanced_api,
         "run_pipeline",

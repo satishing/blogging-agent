@@ -12,7 +12,9 @@ from advanced.services import CacheService, CrewService, PublishingService
 def _get_crew_service() -> CrewService:
     settings = get_settings()
     cache_service = CacheService(settings=settings)
-    publishing_service = PublishingService(settings=settings, cache_service=cache_service)
+    publishing_service = PublishingService(
+        settings=settings, cache_service=cache_service
+    )
     return CrewService(
         settings=settings,
         cache_service=cache_service,

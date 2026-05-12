@@ -128,7 +128,19 @@ SOURCE_YEAR_RETRY_STEPS=3
 uv sync --extra dev
 ```
 
-### 2) Run tests
+### 2) Install pre-commit hooks
+
+```bash
+uv run pre-commit install
+```
+
+Optional one-time run across repository:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+### 3) Run tests
 
 ```bash
 uv run pytest

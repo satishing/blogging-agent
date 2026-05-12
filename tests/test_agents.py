@@ -12,7 +12,9 @@ from advanced.tools import DevToPublisherTool, SerperSearchTool
 
 
 def _test_llm() -> LLM:
-    return LLM(model="openai/gpt-4o", base_url="https://openrouter.ai/api/v1", api_key="test")
+    return LLM(
+        model="openai/gpt-4o", base_url="https://openrouter.ai/api/v1", api_key="test"
+    )
 
 
 def _test_settings(tmp_path) -> Settings:

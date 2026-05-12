@@ -7,7 +7,9 @@ from advanced.tools import SerperSearchTool
 
 
 def _test_llm() -> LLM:
-    return LLM(model="openai/gpt-4o", base_url="https://openrouter.ai/api/v1", api_key="test")
+    return LLM(
+        model="openai/gpt-4o", base_url="https://openrouter.ai/api/v1", api_key="test"
+    )
 
 
 def _test_settings() -> Settings:
@@ -40,4 +42,3 @@ def test_task_factories_include_expected_guardrail_prompts() -> None:
     assert "2026 onward" in research_task.description
     assert "strict JSON" in editing_task.description
     assert writing_task.context and len(writing_task.context) == 1
-

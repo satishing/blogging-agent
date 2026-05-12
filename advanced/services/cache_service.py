@@ -35,7 +35,9 @@ class CacheService:
         try:
             import redis
 
-            self._redis = redis.Redis.from_url(self._settings.redis_url, decode_responses=True)
+            self._redis = redis.Redis.from_url(
+                self._settings.redis_url, decode_responses=True
+            )
             self._redis.ping()
             self._backend = "redis"
         except Exception as error:
@@ -62,7 +64,9 @@ class CacheService:
             return json.loads(value) if value else None
         return self._get_file_value(key)
 
-    def set_json(self, key: str, value: dict[str, Any], ttl_seconds: int | None = None) -> None:
+    def set_json(
+        self, key: str, value: dict[str, Any], ttl_seconds: int | None = None
+    ) -> None:
         ttl = ttl_seconds or self._settings.cache_ttl_seconds
         if self._backend == "redis" and self._redis is not None:
             self._redis.setex(key, ttl, json.dumps(value, ensure_ascii=False))
@@ -83,7 +87,9 @@ class CacheService:
             return None
         return payload.get("value")
 
-    def _set_file_value(self, key: str, value: dict[str, Any], ttl_seconds: int) -> None:
+    def _set_file_value(
+        self, key: str, value: dict[str, Any], ttl_seconds: int
+    ) -> None:
         # Note: this write is not atomic. Two processes writing the same key
         # concurrently can corrupt the JSON file. Single-process and the
         # Redis backend are both safe — this only matters for multi-process
@@ -92,5 +98,6 @@ class CacheService:
             "expires_at": int(time.time()) + ttl_seconds,
             "value": value,
         }
-        self._file_path(key).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
+        self._file_path(key).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )

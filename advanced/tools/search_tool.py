@@ -24,7 +24,9 @@ class SerperSearchClient:
     def __init__(self, settings: Settings):
         self._settings = settings
 
-    def search(self, query: str, *, max_results: int | None = None) -> list[dict[str, Any]]:
+    def search(
+        self, query: str, *, max_results: int | None = None
+    ) -> list[dict[str, Any]]:
         payload = {"q": query, "num": max_results or self._settings.search_result_count}
         headers = {
             "X-API-KEY": self._settings.serper_api_key,
@@ -36,7 +38,9 @@ class SerperSearchClient:
         normalized = (self._normalize_result(item) for item in organic)
         return [item for item in normalized if item is not None]
 
-    def _post_with_retry(self, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    def _post_with_retry(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> dict[str, Any]:
         attempts = 3
         last_error: Exception | None = None
         for attempt in range(1, attempts + 1):

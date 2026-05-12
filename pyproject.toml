@@ -38,3 +38,28 @@ package = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+
+[tool.pylint.main]
+py-version = "3.13"
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.3.1",
+    "flake8>=7.3.0",
+    "pre-commit>=4.6.0",
+    "pylint>=4.0.5",
+]
