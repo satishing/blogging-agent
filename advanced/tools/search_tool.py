@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 from datetime import date, timedelta
 from typing import Any
 
 import requests
-from crewai.tools import BaseTool
-from pydantic import PrivateAttr
 
 from advanced.config import Settings
 
@@ -117,21 +114,3 @@ class SerperSearchClient:
         if year_match:
             return date(int(year_match.group(1)), 1, 1)
         return None
-
-
-class SerperSearchTool(BaseTool):
-    name: str = "search_latest_sources"
-    description: str = (
-        "Searches the web for recent topic coverage and returns source objects "
-        "with title, url, snippet, and published_date (null when no date is found)."
-    )
-
-    _client: SerperSearchClient = PrivateAttr()
-
-    def __init__(self, settings: Settings, **kwargs: Any):
-        super().__init__(**kwargs)
-        self._client = SerperSearchClient(settings=settings)
-
-    def _run(self, query: str) -> str:
-        results = self._client.search(query)
-        return json.dumps(results, ensure_ascii=False)

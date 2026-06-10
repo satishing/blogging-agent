@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from advanced.agents import (
     build_editor_agent,
+    build_planner_agent,
     build_publisher_agent,
     build_writer_agent,
 )
@@ -14,11 +15,17 @@ from advanced.config.settings import Settings
 from advanced.models import BlogDraft, PipelineResult, PublishResult, ResearchSource
 from advanced.tasks import (
     build_editing_task,
+    build_outline_task,
     build_publishing_task,
     build_writing_task,
 )
 from advanced.tools import DevToPublisherTool
-from advanced.utils import estimate_read_minutes, extract_json_object, get_logger
+from advanced.utils import (
+    WORDS_PER_MINUTE,
+    estimate_read_minutes,
+    extract_json_object,
+    get_logger,
+)
 
 from .cache_service import CacheService
 from .publishing_service import PublishingService
@@ -118,7 +125,7 @@ class CrewService:
         blog = self._run_content_crew(topic=topic, sources=sources)
         blog.sources = sources
         self._require_minimum_sources(blog=blog)
-        self._clamp_read_minutes(blog=blog)
+        self._finalize_read_minutes(blog=blog)
         return blog
 
     def _run_content_crew(
@@ -126,10 +133,22 @@ class CrewService:
     ) -> BlogDraft:
         # The shared expense (the LLM connection) lives on `self._llm`; agents and
         # tasks are cheap to build per run and CrewAI doesn't reuse state anyway.
+        # Flow: plan an outline → write to a length/structure guardrail → edit and
+        # serialize via output_pydantic (CrewAI enforces the schema and retries).
+        planner_agent = build_planner_agent(llm=self._llm)
         writer_agent = build_writer_agent(llm=self._llm)
         editor_agent = build_editor_agent(llm=self._llm)
 
-        writing_task = build_writing_task(agent=writer_agent)
+        min_words = self._settings.min_read_minutes * WORDS_PER_MINUTE
+        max_words = self._settings.max_read_minutes * WORDS_PER_MINUTE
+
+        outline_task = build_outline_task(agent=planner_agent)
+        writing_task = build_writing_task(
+            agent=writer_agent,
+            min_words=min_words,
+            max_words=max_words,
+            min_sources=self._settings.min_sources,
+        )
         editing_task = build_editing_task(
             agent=editor_agent,
             writing_task=writing_task,
@@ -138,8 +157,8 @@ class CrewService:
         )
 
         crew = Crew(
-            agents=[writer_agent, editor_agent],
-            tasks=[writing_task, editing_task],
+            agents=[planner_agent, writer_agent, editor_agent],
+            tasks=[outline_task, writing_task, editing_task],
             verbose=False,
         )
         research_json = json.dumps(
@@ -152,10 +171,22 @@ class CrewService:
         crew_result = crew.kickoff(
             inputs={"topic": topic, "research_json": research_json}
         )
-        raw_output = getattr(crew_result, "raw", str(crew_result))
+        return self._blog_from_crew_result(crew_result)
 
-        blog_data = extract_json_object(raw_output)
-        return BlogDraft.model_validate(blog_data)
+    @staticmethod
+    def _blog_from_crew_result(crew_result) -> BlogDraft:
+        """Prefer the schema-validated pydantic output; fall back to raw JSON.
+
+        `output_pydantic` on the editing task makes CrewAI parse and validate the
+        final output into a BlogDraft (retrying the agent on malformed output).
+        The raw-text path remains as a defensive fallback in case a future model
+        or CrewAI version returns only text.
+        """
+        blog = getattr(crew_result, "pydantic", None)
+        if isinstance(blog, BlogDraft):
+            return blog
+        raw_output = getattr(crew_result, "raw", str(crew_result))
+        return BlogDraft.model_validate(extract_json_object(raw_output))
 
     def _run_publish_pipeline(self, *, blog: BlogDraft) -> PublishResult:
         publish_tool = DevToPublisherTool(publishing_service=self._publishing_service)
@@ -204,27 +235,25 @@ class CrewService:
                 f"(got {len(blog.sources)})."
             )
 
-    def _clamp_read_minutes(self, *, blog: BlogDraft) -> None:
-        """Clamp the blog's estimated read time into the configured window.
+    def _finalize_read_minutes(self, *, blog: BlogDraft) -> None:
+        """Set `estimated_read_minutes` to the true computed value.
 
-        Mutates `blog.estimated_read_minutes`. Logs a warning when clamping
-        is applied so we can spot consistently long/short generations.
+        Length is enforced upstream by the writing-task guardrail, so we report
+        the honest computed read time rather than fake-clamping the number. A
+        value outside the configured window means the guardrail's retries were
+        exhausted — we log it as a quality warning instead of hiding it.
         """
         computed_minutes = estimate_read_minutes(blog.content_markdown)
-        if computed_minutes < self._settings.min_read_minutes:
+        if not (
+            self._settings.min_read_minutes
+            <= computed_minutes
+            <= self._settings.max_read_minutes
+        ):
             logger.warning(
-                "Read-time below target (%s min). Clamping to %s.",
+                "Final read-time %s min is outside target window %s-%s; the "
+                "content-length guardrail did not converge.",
                 computed_minutes,
                 self._settings.min_read_minutes,
-            )
-            blog.estimated_read_minutes = self._settings.min_read_minutes
-            return
-        if computed_minutes > self._settings.max_read_minutes:
-            logger.warning(
-                "Read-time above target (%s min). Clamping to %s.",
-                computed_minutes,
                 self._settings.max_read_minutes,
             )
-            blog.estimated_read_minutes = self._settings.max_read_minutes
-            return
-        blog.estimated_read_minutes = computed_minutes
+        blog.estimated_read_minutes = max(1, min(computed_minutes, 20))

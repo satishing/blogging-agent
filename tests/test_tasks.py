@@ -1,9 +1,9 @@
 from crewai import LLM
 
-from advanced.agents import build_editor_agent, build_research_agent, build_writer_agent
-from advanced.config.settings import Settings
-from advanced.tasks import build_editing_task, build_research_task, build_writing_task
-from advanced.tools import SerperSearchTool
+from advanced.agents import build_editor_agent, build_planner_agent, build_writer_agent
+from advanced.models import BlogDraft
+from advanced.tasks import build_editing_task, build_outline_task, build_writing_task
+from advanced.tasks.writing_task import _build_readability_guardrail
 
 
 def _test_llm() -> LLM:
@@ -12,26 +12,16 @@ def _test_llm() -> LLM:
     )
 
 
-def _test_settings() -> Settings:
-    return Settings(
-        OPENROUTER_API_KEY="test",
-        SERPER_API_KEY="test",
-        DEVTO_API_KEY="test",
-        cache_backend="file",
-    )
-
-
 def test_task_factories_include_expected_guardrail_prompts() -> None:
     llm = _test_llm()
-    settings = _test_settings()
-    search_tool = SerperSearchTool(settings=settings)
-
-    research_agent = build_research_agent(llm, search_tool)
+    planner_agent = build_planner_agent(llm)
     writer_agent = build_writer_agent(llm)
     editor_agent = build_editor_agent(llm)
 
-    research_task = build_research_task(research_agent, min_year=2026, min_sources=4)
-    writing_task = build_writing_task(writer_agent)
+    outline_task = build_outline_task(planner_agent)
+    writing_task = build_writing_task(
+        writer_agent, min_words=1320, max_words=1760, min_sources=4
+    )
     editing_task = build_editing_task(
         editor_agent,
         writing_task,
@@ -39,8 +29,39 @@ def test_task_factories_include_expected_guardrail_prompts() -> None:
         max_read_minutes=8,
     )
 
-    assert "2026 onward" in research_task.description
-    assert "strict JSON" in editing_task.description
-    # The writer now receives research material via the {research_json} input
-    # rather than a task-context dependency.
+    # Outline + writer both consume the deterministically gathered research.
+    assert "{research_json}" in outline_task.description
     assert "{research_json}" in writing_task.description
+    # Writer spec pins the length band and required structure.
+    assert "1320-1760 words" in writing_task.description
+    assert "## References" in writing_task.description
+    # Editor serializes to a validated BlogDraft via output_pydantic.
+    assert editing_task.output_pydantic is BlogDraft
+
+
+def test_writing_guardrail_enforces_length_structure_and_citations() -> None:
+    guardrail = _build_readability_guardrail(min_words=50, max_words=200)
+
+    class _Output:
+        def __init__(self, raw: str) -> None:
+            self.raw = raw
+
+    # Too short.
+    ok, feedback = guardrail(_Output("word " * 10))
+    assert ok is False and "too short" in feedback.lower()
+
+    # Long enough but missing required sections / citations.
+    body_only = "word " * 120
+    ok, feedback = guardrail(_Output(body_only))
+    assert ok is False
+
+    # A complete, well-structured draft passes.
+    good = (
+        "Intro hook sentence that frames the problem clearly for readers. "
+        + "word " * 90
+        + "\n\n## Key takeaways\n- point\n\n## Background\nText [1].\n\n"
+        "## Approach\nMore text.\n\n## Tradeoffs\nMore text.\n\n"
+        "## Conclusion\nWrap up.\n\n## References\n1. [Source](https://e.com)\n"
+    )
+    ok, payload = guardrail(_Output(good))
+    assert ok is True

@@ -19,7 +19,7 @@ All three folders solve the **same problem** — a four-agent blogging pipeline 
 
 Suggested order: **`demo/` → `basic/` → `advanced/`**. The notebooks teach the moving parts; `basic/` shows the same end-to-end pipeline as a structured program using CrewAI's decorator scaffold; `advanced/` is what production looks like once you wrap that pipeline in caching, idempotency, an HTTP API, and tests.
 
-Recommended reading order inside `advanced/`: `agents/` → `tasks/` → `tools/` → `services/crew_service.py` → `main.py`. The rest is infrastructure (settings, cache, security middleware).
+Recommended reading order inside `advanced/`: `agents/` → `tasks/` → `tools/` → `services/source_service.py` → `services/crew_service.py` → `main.py`. The rest is infrastructure (settings, cache, security middleware).
 
 ## Architecture
 
@@ -28,11 +28,12 @@ flowchart LR
 cliClient[CLIClient] --> appMain[advanced/main.py]
 apiClient[APIClient] --> appMain
 appMain --> crewService[CrewService]
-crewService --> researchAgent[ResearchAgent]
+crewService --> sourceService[SourceService]
+sourceService --> searchClient[SerperSearchClient]
+searchClient --> serperAPI[SerperAPI]
 crewService --> writerAgent[WriterAgent]
 crewService --> editorAgent[EditorAgent]
 crewService --> publisherAgent[PublisherAgent]
-researchAgent --> searchTool[SerperSearchTool]
 publisherAgent --> publishTool[DevToPublisherTool]
 publishTool --> publishingService[PublishingService]
 publishingService --> devtoClient[DevToPublisherClient]
@@ -117,7 +118,8 @@ API_AUTH_HEADER_NAME=X-API-Key
 API_RATE_LIMIT_ENABLED=true
 API_RATE_LIMIT_PER_MINUTE=30
 API_RATE_LIMIT_WINDOW_SECONDS=60
-SOURCE_YEAR_RETRY_STEPS=3
+SOURCE_YEAR_RETRY_STEPS=3   # how far below the target year the freshness floor may relax
+SEARCH_QUERY_VARIANTS=1     # 1=topic only; 2 adds "<topic> latest"; 3 adds "<topic> <year>"
 ```
 
 ## Setup (Local)

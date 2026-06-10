@@ -1,6 +1,13 @@
-"""Editing task — production version of demo/05_editor_agent.ipynb."""
+"""Editing task — production version of demo/05_editor_agent.ipynb.
+
+The editor does real editorial work (clarity, flow, citation coverage, length)
+and then serializes the result into a validated BlogDraft via `output_pydantic`,
+which lets CrewAI enforce the schema and retry the agent on malformed output.
+"""
 
 from crewai import Agent, Task
+
+from advanced.models import BlogDraft
 
 
 def build_editing_task(
@@ -12,16 +19,30 @@ def build_editing_task(
 ) -> Task:
     return Task(
         description=(
-            "Convert the markdown blog into strict JSON. "
-            "JSON keys required: topic, title, summary, content_markdown, tags, estimated_read_minutes, sources. "
-            f"estimated_read_minutes must be between {min_read_minutes} and {max_read_minutes}. "
-            "sources must include title, url, published_date, evidence."
+            "Edit and finalize the drafted blog, then emit it as structured data.\n\n"
+            "Editorial pass (improve, don't just reformat):\n"
+            "- Tighten wording and fix any awkward phrasing; prefer active voice.\n"
+            "- Ensure a logical flow: hook, key takeaways, body sections, "
+            "conclusion, references.\n"
+            "- Verify every inline [n] citation resolves to an entry in the "
+            "References list, and that claims are actually supported by the "
+            "sources. Remove or soften any unsupported claim.\n"
+            f"- Keep the read time between {min_read_minutes} and "
+            f"{max_read_minutes} minutes; trim padding rather than dropping "
+            "substance.\n"
+            "- Do not add new facts or sources beyond those provided.\n\n"
+            "Then output the final article as JSON with keys: topic, title, "
+            "summary, content_markdown (the full edited markdown), tags, "
+            "estimated_read_minutes, sources. 'summary' is a 1-2 sentence dek; "
+            "'tags' are 2-4 lowercase topic tags; each source keeps its title, "
+            "url, published_date, and evidence."
         ),
         expected_output=(
-            '{"topic":"...","title":"...","summary":"...","content_markdown":"...",'
-            '"tags":["ai"],"estimated_read_minutes":7,'
-            '"sources":[{"title":"...","url":"https://...","published_date":"YYYY-MM-DD","evidence":"..."}]}'
+            "A JSON object with fields topic, title, summary, content_markdown, "
+            "tags, estimated_read_minutes, and sources — the polished, "
+            "citation-consistent final article."
         ),
         agent=agent,
         context=[writing_task],
+        output_pydantic=BlogDraft,
     )

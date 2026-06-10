@@ -7,12 +7,13 @@ def build_editor_agent(llm: LLM) -> Agent:
     return Agent(
         role="Technical Blog Editor",
         goal=(
-            "Transform draft content into strict structured JSON and enforce quality standards "
-            "for AI learner audiences."
+            "Sharpen drafts for clarity, flow, and citation integrity, then emit a "
+            "schema-valid final article for AI learner audiences."
         ),
         backstory=(
-            "You validate clarity, source coverage, and output format correctness. "
-            "You are strict about schema compliance."
+            "You are a hands-on editor: you tighten prose, fix flow, and make sure "
+            "every claim is backed by a cited source and every citation resolves. "
+            "You respect the target length and are strict about output schema."
         ),
         llm=llm,
         verbose=False,

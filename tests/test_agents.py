@@ -3,12 +3,11 @@ from crewai import LLM
 from advanced.agents import (
     build_editor_agent,
     build_publisher_agent,
-    build_research_agent,
     build_writer_agent,
 )
 from advanced.config.settings import Settings
 from advanced.services import CacheService, PublishingService
-from advanced.tools import DevToPublisherTool, SerperSearchTool
+from advanced.tools import DevToPublisherTool
 
 
 def _test_llm() -> LLM:
@@ -33,19 +32,15 @@ def _test_settings(tmp_path) -> Settings:
 def test_agent_factories_create_expected_roles(tmp_path) -> None:
     llm = _test_llm()
     settings = _test_settings(tmp_path)
-    research_tool = SerperSearchTool(settings=settings)
     cache = CacheService(settings=settings)
     publishing = PublishingService(settings=settings, cache_service=cache)
     publish_tool = DevToPublisherTool(publishing_service=publishing)
 
-    research = build_research_agent(llm, research_tool)
     writer = build_writer_agent(llm)
     editor = build_editor_agent(llm)
     publisher = build_publisher_agent(llm, publish_tool)
 
-    assert "Research" in research.role
     assert "Writer" in writer.role
     assert "Editor" in editor.role
     assert "Publisher" in publisher.role
-    assert len(research.tools) == 1
     assert len(publisher.tools) == 1

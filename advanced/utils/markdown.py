@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from json import JSONDecoder
 
+# Shared reading-speed constant so read-time estimation and the content-length
+# guardrail agree on the same words-per-minute basis.
+WORDS_PER_MINUTE = 220
+
 
 def _strip_fences(text: str) -> str:
     return text.strip().replace("```json", "").replace("```", "").strip()
@@ -32,7 +36,9 @@ def extract_json_object(text: str) -> dict:
     raise ValueError("Could not extract a valid JSON object from text output.")
 
 
-def estimate_read_minutes(content_markdown: str, words_per_minute: int = 220) -> int:
+def estimate_read_minutes(
+    content_markdown: str, words_per_minute: int = WORDS_PER_MINUTE
+) -> int:
     words = len(content_markdown.split())
     if words == 0:
         return 0
