@@ -38,6 +38,15 @@ package = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+filterwarnings = [
+    # CrewAI accesses its own pydantic fields that it has marked deprecated
+    # (allow_code_execution, reasoning/planning_config) on every Agent
+    # construction. The warnings originate inside the library and are not
+    # actionable from this codebase, so we silence just those to keep test
+    # output readable. Matched on the exact "deprecated" message these fields
+    # emit, so longer-worded deprecations elsewhere still surface.
+    "ignore:^deprecated$:DeprecationWarning",
+]
 
 [tool.black]
 line-length = 88
