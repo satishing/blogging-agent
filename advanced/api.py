@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from advanced.config import get_settings
+from advanced.config import get_settings, reveal
 from advanced.runtime import run_pipeline
 from advanced.security import InMemoryRateLimiter, hash_bucket_key
 from advanced.utils import setup_logging
@@ -31,7 +32,10 @@ def create_app():
     settings = get_settings()
     setup_logging(settings.log_level, f"{settings.log_dir}/app.log")
 
-    if settings.api_auth_enabled and not settings.api_auth_key:
+    # Resolve the auth secret once at startup; the raw value only lives in this
+    # closure, never in request handling beyond a constant-time comparison.
+    api_auth_key = reveal(settings.api_auth_key)
+    if settings.api_auth_enabled and not api_auth_key:
         raise RuntimeError("API auth is enabled but API_AUTH_KEY is missing.")
 
     app = FastAPI(title="Blogging Agent API", version="1.0.0")
@@ -55,7 +59,7 @@ def create_app():
 
         if settings.api_auth_enabled:
             provided = request.headers.get(settings.api_auth_header_name)
-            if provided != settings.api_auth_key:
+            if not provided or not hmac.compare_digest(provided, api_auth_key):
                 return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
             identifier = hash_bucket_key(provided)
         else:

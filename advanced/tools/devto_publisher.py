@@ -11,7 +11,7 @@ import requests
 from crewai.tools import BaseTool
 from pydantic import PrivateAttr
 
-from advanced.config import Settings
+from advanced.config import Settings, reveal
 from advanced.models import BlogDraft, PublishResult
 
 if TYPE_CHECKING:
@@ -30,7 +30,8 @@ class DevToPublisherClient:
         self._settings = settings
 
     def publish(self, blog: BlogDraft) -> PublishResult:
-        if not self._settings.devto_api_key:
+        api_key = reveal(self._settings.devto_api_key)
+        if not api_key:
             raise ValueError("DEVTO_API_KEY is required for publishing")
 
         payload = {
@@ -43,7 +44,7 @@ class DevToPublisherClient:
             }
         }
         headers = {
-            "api-key": self._settings.devto_api_key,
+            "api-key": api_key,
             "Content-Type": "application/json",
         }
         response_json = self._post_with_retry(payload=payload, headers=headers)

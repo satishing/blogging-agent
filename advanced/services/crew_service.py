@@ -69,7 +69,7 @@ class CrewService:
         self._llm = LLM(
             model=settings.model_name,
             base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            api_key=settings.openrouter_api_key.get_secret_value(),
         )
 
     def run_pipeline(

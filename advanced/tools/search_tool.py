@@ -27,7 +27,7 @@ class SerperSearchClient:
     ) -> list[dict[str, Any]]:
         payload = {"q": query, "num": max_results or self._settings.search_result_count}
         headers = {
-            "X-API-KEY": self._settings.serper_api_key,
+            "X-API-KEY": self._settings.serper_api_key.get_secret_value(),
             "Content-Type": "application/json",
         }
 

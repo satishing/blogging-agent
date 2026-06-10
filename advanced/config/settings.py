@@ -5,8 +5,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def reveal(secret: SecretStr | None) -> str | None:
+    """Return the plaintext of an optional SecretStr, or None if unset/empty.
+
+    Use this at HTTP boundaries (the only place a raw key should appear). Keeping
+    secrets as SecretStr everywhere else means they render as '**********' in
+    logs, reprs, tracebacks, and model_dump() and cannot leak into a prompt.
+    """
+    if secret is None:
+        return None
+    value = secret.get_secret_value()
+    return value or None
 
 
 class Settings(BaseSettings):
@@ -22,7 +35,7 @@ class Settings(BaseSettings):
     # --- API security ---
     api_auth_enabled: bool = True
     api_auth_header_name: str = "X-API-Key"
-    api_auth_key: str | None = Field(default=None, alias="API_AUTH_KEY")
+    api_auth_key: SecretStr | None = Field(default=None, alias="API_AUTH_KEY")
     api_rate_limit_enabled: bool = True
     api_rate_limit_per_minute: int = 30
     api_rate_limit_window_seconds: int = 60
@@ -30,10 +43,10 @@ class Settings(BaseSettings):
     # --- LLM (via OpenRouter) ---
     model_name: str = Field(default="openai/gpt-4o")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
-    openrouter_api_key: str = Field(alias="OPENROUTER_API_KEY")
+    openrouter_api_key: SecretStr = Field(alias="OPENROUTER_API_KEY")
 
     # --- Web search (Serper) ---
-    serper_api_key: str = Field(alias="SERPER_API_KEY")
+    serper_api_key: SecretStr = Field(alias="SERPER_API_KEY")
     serper_api_url: str = "https://google.serper.dev/search"
     search_result_count: int = 10
     # Number of query variants SourceService issues per topic (1 = topic only;
@@ -41,7 +54,7 @@ class Settings(BaseSettings):
     search_query_variants: int = 1
 
     # --- Publishing (Dev.to) ---
-    devto_api_key: str | None = Field(default=None, alias="DEVTO_API_KEY")
+    devto_api_key: SecretStr | None = Field(default=None, alias="DEVTO_API_KEY")
     devto_api_url: str = "https://dev.to/api/articles"
     publish_as_draft: bool = True
 
