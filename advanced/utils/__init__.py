@@ -2,6 +2,7 @@
 
 from .logger import get_logger, setup_logging
 from .markdown import WORDS_PER_MINUTE, estimate_read_minutes, extract_json_object
+from .references import cited_indices, finalize_references, render_references
 
 __all__ = [
     "setup_logging",
@@ -9,4 +10,7 @@ __all__ = [
     "extract_json_object",
     "estimate_read_minutes",
     "WORDS_PER_MINUTE",
+    "finalize_references",
+    "render_references",
+    "cited_indices",
 ]

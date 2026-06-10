@@ -24,6 +24,7 @@ from advanced.utils import (
     WORDS_PER_MINUTE,
     estimate_read_minutes,
     extract_json_object,
+    finalize_references,
     get_logger,
 )
 
@@ -125,6 +126,7 @@ class CrewService:
         blog = self._run_content_crew(topic=topic, sources=sources)
         blog.sources = sources
         self._require_minimum_sources(blog=blog)
+        self._finalize_references(blog=blog)
         self._finalize_read_minutes(blog=blog)
         return blog
 
@@ -234,6 +236,25 @@ class CrewService:
                 f"Need at least {self._settings.min_sources} total sources "
                 f"(got {len(blog.sources)})."
             )
+
+    def _finalize_references(self, *, blog: BlogDraft) -> None:
+        """Rebuild the References section from the authoritative source list.
+
+        The writer's references can drift from the deterministically-overridden
+        sources, so we re-render them and surface any inline citation that points
+        at a source index we don't have (a quality signal, logged not fatal).
+        """
+        final_markdown, dangling = finalize_references(
+            blog.content_markdown, blog.sources
+        )
+        if dangling:
+            logger.warning(
+                "Blog cites source indices with no matching source: %s "
+                "(have %s sources).",
+                dangling,
+                len(blog.sources),
+            )
+        blog.content_markdown = final_markdown
 
     def _finalize_read_minutes(self, *, blog: BlogDraft) -> None:
         """Set `estimated_read_minutes` to the true computed value.
