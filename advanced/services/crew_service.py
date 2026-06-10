@@ -3,12 +3,10 @@ from __future__ import annotations
 import json
 
 from crewai import Crew, LLM
-from pydantic import ValidationError
 
 from advanced.agents import (
     build_editor_agent,
     build_planner_agent,
-    build_publisher_agent,
     build_writer_agent,
 )
 from advanced.config.settings import Settings
@@ -22,10 +20,8 @@ from advanced.models import (
 from advanced.tasks import (
     build_editing_task,
     build_outline_task,
-    build_publishing_task,
     build_writing_task,
 )
-from advanced.tools import DevToPublisherTool
 from advanced.utils import (
     WORDS_PER_MINUTE,
     estimate_read_minutes,
@@ -240,42 +236,20 @@ class CrewService:
         return BlogDraft(**edited.model_dump())
 
     def _run_publish_pipeline(self, *, blog: BlogDraft) -> PublishResult:
-        publish_tool = DevToPublisherTool(publishing_service=self._publishing_service)
-        publisher_agent = build_publisher_agent(
-            llm=self._llm, publish_tool=publish_tool
-        )
-        publishing_task = build_publishing_task(agent=publisher_agent)
+        """Publish deterministically via PublishingService (no LLM in the loop).
 
-        crew = Crew(
-            agents=[publisher_agent],
-            tasks=[publishing_task],
-            verbose=False,
+        Publishing is a deterministic, idempotent side effect — exactly the kind
+        of work an LLM agent should not perform. Delegating it to an agent meant
+        the result depended on the model faithfully echoing the tool's JSON, which
+        is unreliable. PublishingService dedups via the idempotency cache and
+        performs the Dev.to call with retries.
+        """
+        idempotency_key = self._publishing_service.build_idempotency_key(
+            blog.topic, blog.title
         )
-        blog_json = json.dumps(blog.model_dump(mode="json"), ensure_ascii=False)
-        crew_result = crew.kickoff(inputs={"blog_json": blog_json})
-        raw_output = getattr(crew_result, "raw", str(crew_result))
-
-        try:
-            publish_data = extract_json_object(raw_output)
-            return PublishResult.model_validate(publish_data)
-        except (ValueError, ValidationError) as error:
-            # Agent output was not parseable JSON / didn't match the schema.
-            # The tool already wrote the real publish result to the idempotency
-            # cache during its actual API call, so recover from there.
-            idempotency_key = self._publishing_service.build_idempotency_key(
-                blog.topic, blog.title
-            )
-            cached = self._publishing_service.get_cached_publish(idempotency_key)
-            if cached is None:
-                raise RuntimeError(
-                    "Publisher agent returned unparseable output and no cached "
-                    f"publish result was found: {error}"
-                ) from error
-            logger.warning(
-                "Recovered publish result from idempotency cache after unparseable "
-                "agent output."
-            )
-            return cached
+        return self._publishing_service.publish_blog(
+            blog, idempotency_key=idempotency_key
+        )
 
     def _require_minimum_sources(self, *, blog: BlogDraft) -> None:
         """Raise if the blog does not meet the configured minimum source count."""

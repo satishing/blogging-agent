@@ -81,30 +81,8 @@ def test_publishing_service_duplicate_guard(monkeypatch, tmp_path) -> None:
     assert second.status == "duplicate_skipped"
 
 
-class _FakeKickoffResult:
-    def __init__(self, raw: str) -> None:
-        self.raw = raw
-
-
-def _install_fake_crew(monkeypatch, raw_factory) -> dict:
-    """Install a fake Crew that calls the publisher tool then returns
-    `raw_factory(tool_output)` so tests can simulate good or bad agent output."""
-    captured: dict = {}
-
-    class _FakeCrew:
-        def __init__(self, *, agents, tasks, **kwargs):
-            captured["tool"] = agents[0].tools[0]
-
-        def kickoff(self, inputs):
-            tool_output = captured["tool"]._run(inputs["blog_json"])
-            captured["last_tool_output"] = tool_output
-            return _FakeKickoffResult(raw=raw_factory(tool_output))
-
-    monkeypatch.setattr("advanced.services.crew_service.Crew", _FakeCrew)
-    return captured
-
-
-def test_publish_pipeline_returns_agent_json(monkeypatch, tmp_path) -> None:
+def test_publish_pipeline_publishes_deterministically(monkeypatch, tmp_path) -> None:
+    """Publishing goes straight through PublishingService — no LLM in the loop."""
     settings = _test_settings(tmp_path)
     cache = CacheService(settings=settings)
     publishing = PublishingService(settings=settings, cache_service=cache)
@@ -119,43 +97,21 @@ def test_publish_pipeline_returns_agent_json(monkeypatch, tmp_path) -> None:
         external_id="999",
         url="https://dev.to/example-999",
     )
-    monkeypatch.setattr(publishing._devto_client, "publish", lambda _: expected)
-    _install_fake_crew(monkeypatch, raw_factory=lambda tool_output: tool_output)
+    publish_calls = []
+    monkeypatch.setattr(
+        publishing._devto_client,
+        "publish",
+        lambda blog: publish_calls.append(blog) or expected,
+    )
 
     first = service._run_publish_pipeline(blog=blog)
     second = service._run_publish_pipeline(blog=blog)
 
     assert first.status == "draft_created"
     assert first.external_id == "999"
+    # Idempotent: the second call is served from cache, not re-posted.
     assert second.status == "duplicate_skipped"
-
-
-def test_publish_pipeline_recovers_from_junk_agent_output(
-    monkeypatch, tmp_path
-) -> None:
-    settings = _test_settings(tmp_path)
-    cache = CacheService(settings=settings)
-    publishing = PublishingService(settings=settings, cache_service=cache)
-    service = CrewService(
-        settings=settings, cache_service=cache, publishing_service=publishing
-    )
-    blog = _sample_blog()
-
-    expected = PublishResult(
-        platform="dev.to",
-        status="draft_created",
-        external_id="888",
-        url="https://dev.to/example-888",
-    )
-    monkeypatch.setattr(publishing._devto_client, "publish", lambda _: expected)
-    _install_fake_crew(
-        monkeypatch, raw_factory=lambda _: "I successfully published the blog."
-    )
-
-    result = service._run_publish_pipeline(blog=blog)
-
-    assert result.status == "draft_created"
-    assert result.external_id == "888"
+    assert len(publish_calls) == 1, "Dev.to should be called exactly once"
 
 
 def test_guardrail_requires_min_sources_total(tmp_path) -> None:

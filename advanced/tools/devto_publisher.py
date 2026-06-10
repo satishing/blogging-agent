@@ -1,21 +1,15 @@
-"""Dev.to publishing — HTTP client + CrewAI tool used by the publisher agent."""
+"""Dev.to publishing — HTTP transport client used by PublishingService."""
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import requests
-from crewai.tools import BaseTool
-from pydantic import PrivateAttr
 
 from advanced.config import Settings, reveal
 from advanced.models import BlogDraft, PublishResult
-
-if TYPE_CHECKING:
-    from advanced.services.publishing_service import PublishingService
 
 
 class DevToPublisherClient:
@@ -80,32 +74,3 @@ class DevToPublisherClient:
                     break
                 time.sleep(attempt * 2)
         raise RuntimeError("Dev.to publish failed after retries") from last_error
-
-
-class DevToPublisherTool(BaseTool):
-    """CrewAI tool wired to PublishingService so idempotency is enforced even
-    when an agent invokes publishing. The agent sees a simple `blog_json -> result`
-    interface; idempotency, caching, and HTTP retries live behind the service."""
-
-    name: str = "publish_to_devto"
-    description: str = (
-        "Publishes validated blog JSON to Dev.to. Input must be a JSON object containing "
-        "title, summary, content_markdown, tags, topic, estimated_read_minutes, and sources."
-    )
-
-    _publishing_service: "PublishingService" = PrivateAttr()
-
-    def __init__(self, publishing_service: "PublishingService", **kwargs: Any):
-        super().__init__(**kwargs)
-        self._publishing_service = publishing_service
-
-    def _run(self, blog_json: str) -> str:
-        blog_data = json.loads(blog_json)
-        blog = BlogDraft.model_validate(blog_data)
-        idempotency_key = self._publishing_service.build_idempotency_key(
-            blog.topic, blog.title
-        )
-        result = self._publishing_service.publish_blog(
-            blog, idempotency_key=idempotency_key
-        )
-        return json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
