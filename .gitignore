@@ -29,3 +29,6 @@ data/logs/*
 .vscode/
 .fleet/
 *.code-workspace
+
+# ENV
+.env
