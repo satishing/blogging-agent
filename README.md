@@ -214,16 +214,17 @@ brew services start redis
 
 ## Guardrails and Reliability
 
-- Date freshness: sources are expected from `min_year` onward (default 2026).
-- If sources from `min_year` are insufficient, pipeline accumulates sources year-by-year from `min_year`, then `min_year - 1`, `min_year - 2`, and `min_year - 3` until `min_sources` is met.
-- Structured output: editor task must return strict JSON.
-- Readability: blog target is 6-8 minute read.
+- Source gathering (`advanced/`): a deterministic `SourceService` searches once, ranks results newest-first, and keeps the freshest sources that clear a freshness floor at `min_year`. The floor only relaxes year-by-year (down to `min_year - SOURCE_YEAR_RETRY_STEPS`) when there aren't enough fresher sources, and undated results are used last as a backfill tier rather than dropped.
+- Structured output: the editing task uses `output_pydantic=BlogDraft`, so CrewAI validates the schema and retries the agent on malformed output.
+- Readability: plan → write → edit flow. A writing-task guardrail enforces the length band, required sections, and inline citations (with bounded retries); the References section is re-rendered from the authoritative source list; `BlogDraft` enforces a minimum word count.
+- Read time: blog target is 6-8 minutes; the reported value is the true computed read time, not a clamped number.
 - Publishing policy: Dev.to draft-first by default.
 - Resilience: retries/timeouts in external API tools.
 - Cache fallback: Redis preferred, file cache fallback automatically.
 - Idempotency: duplicate publish protection via idempotency key.
-- API security: API key middleware with configurable header.
+- API security: API-key middleware (constant-time comparison) with configurable header.
 - API throttling: in-memory per-key request rate limiting (429 on exceed).
+- Secret handling: API keys are `SecretStr` (masked in logs/reprs/`model_dump()`), revealed only at HTTP boundaries; CrewAI/OTEL telemetry is opted out at import; API errors are sanitized (generic message + correlation id, full detail logged server-side).
 
 ## Mode-Specific Required Variables
 
