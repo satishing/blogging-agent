@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import requests
@@ -16,9 +16,10 @@ from advanced.config import Settings
 class SerperSearchClient:
     """HTTP transport for the Serper Google Search API with retry/backoff.
 
-    Returns normalized `{title, url, snippet, published_date}` dicts. Results
-    without an extractable year are dropped so they cannot slip past the
-    freshness cutoff downstream in CrewService.
+    Returns normalized `{title, url, snippet, published_date}` dicts. Undated
+    results are kept with `published_date = None` so SourceService can rank them
+    as a lowest-priority backfill tier rather than dropping fresh-but-undated
+    articles outright.
     """
 
     def __init__(self, settings: Settings):
@@ -62,23 +63,57 @@ class SerperSearchClient:
 
     @staticmethod
     def _normalize_result(item: dict[str, Any]) -> dict[str, Any] | None:
-        # Drop undated results: stamping them with date.today() previously made
-        # stale articles slip past the freshness cutoff in CrewService.
-        published_date = SerperSearchClient._extract_date(item.get("date", ""))
-        if published_date is None:
+        # Keep undated results (published_date=None). SourceService ranks them as
+        # a lowest-priority backfill tier, so a fresh-but-undated article is no
+        # longer silently discarded the way dropping it here used to do.
+        url = item.get("link") or ""
+        if not url:
             return None
+        published_date = SerperSearchClient._extract_date(item.get("date", ""))
         return {
             "title": item.get("title") or "Untitled Source",
-            "url": item.get("link") or "",
+            "url": url,
             "snippet": item.get("snippet") or "",
-            "published_date": published_date.isoformat(),
+            "published_date": published_date.isoformat() if published_date else None,
         }
 
     @staticmethod
     def _extract_date(raw_value: str) -> date | None:
-        # The 20\d{2} pattern matches years 2000-2099. Sufficient for current
-        # use; revisit if blogging persists into the year 2100.
-        year_match = re.search(r"(20\d{2})", raw_value or "")
+        """Best-effort parse of Serper's free-form `date` field.
+
+        Handles ISO dates (`YYYY-MM-DD` / `YYYY/MM/DD`), relative phrases
+        ("today", "yesterday", "N days/weeks/months/years ago"), and a bare-year
+        fallback. Returns None when nothing parseable is found.
+        """
+        value = (raw_value or "").strip().lower()
+        if not value:
+            return None
+
+        if value == "today":
+            return date.today()
+        if value == "yesterday":
+            return date.today() - timedelta(days=1)
+
+        # ISO-style absolute date with a real month/day.
+        iso_match = re.search(r"(20\d{2})[-/](\d{1,2})[-/](\d{1,2})", value)
+        if iso_match:
+            year, month, day = (int(group) for group in iso_match.groups())
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+
+        # Relative phrases like "3 days ago" / "2 weeks ago" / "1 month ago".
+        relative_match = re.search(r"(\d+)\s+(day|week|month|year)s?\s+ago", value)
+        if relative_match:
+            amount = int(relative_match.group(1))
+            unit = relative_match.group(2)
+            unit_to_days = {"day": 1, "week": 7, "month": 30, "year": 365}
+            return date.today() - timedelta(days=amount * unit_to_days[unit])
+
+        # Bare-year fallback. The 20\d{2} pattern matches years 2000-2099;
+        # revisit if blogging persists into the year 2100.
+        year_match = re.search(r"(20\d{2})", value)
         if year_match:
             return date(int(year_match.group(1)), 1, 1)
         return None
@@ -87,8 +122,8 @@ class SerperSearchClient:
 class SerperSearchTool(BaseTool):
     name: str = "search_latest_sources"
     description: str = (
-        "Searches the web for recent topic coverage and returns dated source objects "
-        "with title, url, snippet, and published_date. Undated results are dropped."
+        "Searches the web for recent topic coverage and returns source objects "
+        "with title, url, snippet, and published_date (null when no date is found)."
     )
 
     _client: SerperSearchClient = PrivateAttr()

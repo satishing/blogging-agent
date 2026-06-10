@@ -31,7 +31,7 @@ def test_task_factories_include_expected_guardrail_prompts() -> None:
     editor_agent = build_editor_agent(llm)
 
     research_task = build_research_task(research_agent, min_year=2026, min_sources=4)
-    writing_task = build_writing_task(writer_agent, research_task)
+    writing_task = build_writing_task(writer_agent)
     editing_task = build_editing_task(
         editor_agent,
         writing_task,
@@ -41,4 +41,6 @@ def test_task_factories_include_expected_guardrail_prompts() -> None:
 
     assert "2026 onward" in research_task.description
     assert "strict JSON" in editing_task.description
-    assert writing_task.context and len(writing_task.context) == 1
+    # The writer now receives research material via the {research_json} input
+    # rather than a task-context dependency.
+    assert "{research_json}" in writing_task.description

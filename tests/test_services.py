@@ -183,86 +183,77 @@ def test_guardrail_requires_min_sources_total(tmp_path) -> None:
         pass
 
 
-def test_content_pipeline_retries_older_years(monkeypatch, tmp_path) -> None:
+def test_content_pipeline_gathers_then_runs_crew_once(monkeypatch, tmp_path) -> None:
+    """Source gathering is delegated to SourceService; the crew runs a single time."""
     settings = _test_settings(tmp_path)
-    settings.source_year_retry_steps = 3
-    service = CrewService(settings=settings)
-    attempted_years: list[int] = []
+    gathered = [_source_for_year(2026 - offset) for offset in range(4)]
 
-    def fake_run_content_pipeline_for_year(*, topic: str, min_year: int) -> BlogDraft:
-        attempted_years.append(min_year)
-        if min_year > 2024:
-            raise SourceGuardrailError("Not enough sources yet.")
+    class FakeSourceService:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
 
-        return BlogDraft(
-            topic=topic,
-            title="AI Agents in 2024: Practical guide",
-            summary="A practical guide for AI learners building robust production systems.",
-            content_markdown="word " * 1600,
-            tags=["ai", "agents"],
-            estimated_read_minutes=7,
-            sources=[
-                ResearchSource(
-                    title=f"AI update 2024-{idx}",
-                    url=f"https://example.com/2024/{idx}",
-                    published_date=date(2024, 1, 10),
-                    evidence="Evidence text about the topic from a credible source.",
-                )
-                for idx in range(4)
-            ],
-        )
-
-    monkeypatch.setattr(
-        service,
-        "_run_content_pipeline_for_year",
-        fake_run_content_pipeline_for_year,
-    )
-
-    blog = service._run_content_pipeline(topic="AI Agents", min_year=2026)
-    assert blog.title == "AI Agents in 2024: Practical guide"
-    assert attempted_years == [2026, 2025, 2024]
-
-
-def test_content_pipeline_accumulates_sources_across_years(
-    monkeypatch, tmp_path
-) -> None:
-    settings = _test_settings(tmp_path)
-    settings.min_sources = 4
-    settings.source_year_retry_steps = 3
-    service = CrewService(settings=settings)
-    attempted_years: list[int] = []
-
-    def fake_run_content_pipeline_for_year(*, topic: str, min_year: int) -> BlogDraft:
-        attempted_years.append(min_year)
-        year_to_count = {2026: 1, 2025: 1, 2024: 2}
-        count = year_to_count.get(min_year, 0)
-        sources = [
-            ResearchSource(
-                title=f"AI update {min_year}-{idx}",
-                url=f"https://example.com/{min_year}/{idx}",
-                published_date=date(min_year, 1, 10),
-                evidence="Evidence text about the topic from a credible source.",
+        def gather(self, *, topic, min_year, min_sources, retry_steps):
+            self.calls.append(
+                {
+                    "topic": topic,
+                    "min_year": min_year,
+                    "min_sources": min_sources,
+                    "retry_steps": retry_steps,
+                }
             )
-            for idx in range(count)
-        ]
+            return gathered
 
+    fake_source_service = FakeSourceService()
+    service = CrewService(settings=settings, source_service=fake_source_service)
+
+    crew_runs: list[str] = []
+
+    def fake_run_content_crew(*, topic, sources):
+        crew_runs.append(topic)
+        # The crew returns a blog whose sources are deliberately wrong/empty to
+        # prove the deterministic override below replaces them.
         return BlogDraft(
             topic=topic,
-            title="AI Agents: Cumulative source strategy",
-            summary="A practical guide for AI learners building robust production systems.",
+            title="AI Agents: Production patterns",
+            summary="A practical guide for AI learners building production systems.",
             content_markdown="word " * 1600,
             tags=["ai", "agents"],
             estimated_read_minutes=7,
-            sources=sources,
+            sources=[_source_for_year(1999)],
         )
 
-    monkeypatch.setattr(
-        service,
-        "_run_content_pipeline_for_year",
-        fake_run_content_pipeline_for_year,
-    )
+    monkeypatch.setattr(service, "_run_content_crew", fake_run_content_crew)
 
     blog = service._run_content_pipeline(topic="AI Agents", min_year=2026)
-    assert len(blog.sources) == 4
-    assert attempted_years == [2026, 2025, 2024]
-    assert {source.published_date.year for source in blog.sources} == {2026, 2025, 2024}
+
+    assert crew_runs == ["AI Agents"], "crew must run exactly once"
+    assert blog.sources == gathered, "blog.sources must be overridden with gathered"
+    assert fake_source_service.calls == [
+        {
+            "topic": "AI Agents",
+            "min_year": 2026,
+            "min_sources": settings.min_sources,
+            "retry_steps": settings.source_year_retry_steps,
+        }
+    ]
+
+
+def test_content_pipeline_propagates_guardrail_error(monkeypatch, tmp_path) -> None:
+    settings = _test_settings(tmp_path)
+
+    class FailingSourceService:
+        def gather(self, *, topic, min_year, min_sources, retry_steps):
+            raise SourceGuardrailError("not enough sources")
+
+    service = CrewService(settings=settings, source_service=FailingSourceService())
+
+    def fail_if_called(*, topic, sources):
+        raise AssertionError("crew should not run when gathering fails")
+
+    monkeypatch.setattr(service, "_run_content_crew", fail_if_called)
+
+    try:
+        service._run_content_pipeline(topic="AI Agents", min_year=2026)
+        assert False, "Expected SourceGuardrailError"
+    except SourceGuardrailError:
+        pass

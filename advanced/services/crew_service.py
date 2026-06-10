@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 
 from crewai import Crew, LLM
 from pydantic import ValidationError
@@ -9,7 +8,6 @@ from pydantic import ValidationError
 from advanced.agents import (
     build_editor_agent,
     build_publisher_agent,
-    build_research_agent,
     build_writer_agent,
 )
 from advanced.config.settings import Settings
@@ -17,20 +15,21 @@ from advanced.models import BlogDraft, PipelineResult, PublishResult, ResearchSo
 from advanced.tasks import (
     build_editing_task,
     build_publishing_task,
-    build_research_task,
     build_writing_task,
 )
-from advanced.tools import DevToPublisherTool, SerperSearchTool
+from advanced.tools import DevToPublisherTool
 from advanced.utils import estimate_read_minutes, extract_json_object, get_logger
 
 from .cache_service import CacheService
 from .publishing_service import PublishingService
 
+# Re-exported for backwards compatibility — the error now originates in
+# SourceService, which owns source gathering.
+from .source_service import SourceGuardrailError, SourceService
+
 logger = get_logger(__name__)
 
-
-class SourceGuardrailError(ValueError):
-    """Raised when source freshness/count guardrails are not met."""
+__all__ = ["CrewService", "SourceGuardrailError"]
 
 
 class CrewService:
@@ -40,8 +39,8 @@ class CrewService:
     a fresh research crew per topic and a separate publisher crew per publish.
 
     See:
-      - `_run_content_pipeline` for the year-by-year source accumulation strategy
-        (the only piece without a demo equivalent).
+      - `_run_content_pipeline` for the deterministic source-gathering step
+        (delegated to SourceService) followed by a single writer→editor crew run.
       - `_run_publish_pipeline` for the multi-agent publish flow that mirrors
         demo Step 06, with idempotency-cache fallback for unparseable agent output.
     """
@@ -51,6 +50,7 @@ class CrewService:
         settings: Settings,
         cache_service: CacheService | None = None,
         publishing_service: PublishingService | None = None,
+        source_service: SourceService | None = None,
     ):
         self._settings = settings
         self._cache = cache_service or CacheService(settings=settings)
@@ -58,6 +58,7 @@ class CrewService:
             settings=settings,
             cache_service=self._cache,
         )
+        self._source_service = source_service or SourceService(settings=settings)
         self._llm = LLM(
             model=settings.model_name,
             base_url=settings.openrouter_base_url,
@@ -98,95 +99,37 @@ class CrewService:
         return result
 
     def _run_content_pipeline(self, *, topic: str, min_year: int) -> BlogDraft:
-        """Run the research/write/edit crew, falling back year-by-year on freshness.
+        """Gather sources deterministically, then run the write→edit crew once.
 
-        Why this loop exists: demo Step 03 shows a single research run. In production,
-        Serper sometimes returns too few sources from the requested `min_year`. Rather
-        than fail, we accumulate sources across `min_year`, `min_year - 1`, ..., down
-        to `min_year - source_year_retry_steps`, dedup by URL, and stop as soon as we
-        have `min_sources` total. This keeps the freshness guardrail strict at the
-        target year while still producing a blog when the world hasn't caught up yet.
+        Source gathering (recency ranking + freshness-floor relaxation + undated
+        backfill) is delegated to SourceService, replacing the old per-year crew
+        re-runs. The expensive writer→editor crew runs a single time over the
+        validated source set, and `blog.sources` is then overwritten with those
+        exact sources so the freshness/count guarantees can't be undone by the
+        LLM dropping or hallucinating sources.
         """
-        base_blog: BlogDraft | None = None
-        source_by_url: dict[str, ResearchSource] = {}
-        target_count = self._settings.min_sources
-        fallback_year = min_year - self._settings.source_year_retry_steps
-
-        for offset in range(self._settings.source_year_retry_steps + 1):
-            attempt_year = min_year - offset
-            try:
-                attempt_blog = self._run_content_pipeline_for_year(
-                    topic=topic, min_year=attempt_year
-                )
-            except SourceGuardrailError as error:
-                logger.warning(
-                    "Year %s attempt failed source guardrail before accumulation: %s",
-                    attempt_year,
-                    error,
-                )
-                continue
-            if base_blog is None:
-                base_blog = attempt_blog
-
-            selected_sources = self._select_sources_for_attempt(
-                sources=attempt_blog.sources,
-                base_year=min_year,
-                attempt_year=attempt_year,
-            )
-            for source in selected_sources:
-                source_by_url.setdefault(str(source.url), source)
-
-            logger.info(
-                "Source accumulation for '%s': %s/%s after year %s attempt.",
-                topic,
-                len(source_by_url),
-                target_count,
-                attempt_year,
-            )
-            if len(source_by_url) >= target_count:
-                if base_blog is None:
-                    raise SourceGuardrailError(
-                        "Internal invariant violated: enough sources accumulated but "
-                        "no base blog was captured."
-                    )
-                base_blog.sources = list(source_by_url.values())[:target_count]
-                self._require_minimum_sources(blog=base_blog)
-                self._clamp_read_minutes(blog=base_blog)
-                return base_blog
-
-            logger.warning(
-                "Insufficient cumulative sources after %s attempt (%s/%s). Retrying with %s.",
-                attempt_year,
-                len(source_by_url),
-                target_count,
-                attempt_year - 1,
-            )
-
-        raise SourceGuardrailError(
-            "Guardrail failed: insufficient dated sources after cumulative retries. "
-            f"Need at least {target_count} total sources while trying years "
-            f"{min_year} to {fallback_year}. Found only {len(source_by_url)}."
+        sources = self._source_service.gather(
+            topic=topic,
+            min_year=min_year,
+            min_sources=self._settings.min_sources,
+            retry_steps=self._settings.source_year_retry_steps,
         )
 
-    def _run_content_pipeline_for_year(self, *, topic: str, min_year: int) -> BlogDraft:
-        # Tool/agent/task instances are built fresh per attempt because each
-        # year fallback is an independent run; CrewAI doesn't reuse state
-        # across kickoffs anyway. The shared expense (the LLM connection) is
-        # instantiated once on `self._llm`.
-        search_tool = SerperSearchTool(settings=self._settings)
+        blog = self._run_content_crew(topic=topic, sources=sources)
+        blog.sources = sources
+        self._require_minimum_sources(blog=blog)
+        self._clamp_read_minutes(blog=blog)
+        return blog
 
-        research_agent = build_research_agent(llm=self._llm, search_tool=search_tool)
+    def _run_content_crew(
+        self, *, topic: str, sources: list[ResearchSource]
+    ) -> BlogDraft:
+        # The shared expense (the LLM connection) lives on `self._llm`; agents and
+        # tasks are cheap to build per run and CrewAI doesn't reuse state anyway.
         writer_agent = build_writer_agent(llm=self._llm)
         editor_agent = build_editor_agent(llm=self._llm)
 
-        research_task = build_research_task(
-            agent=research_agent,
-            min_year=min_year,
-            min_sources=self._settings.min_sources,
-        )
-        writing_task = build_writing_task(
-            agent=writer_agent, research_task=research_task
-        )
+        writing_task = build_writing_task(agent=writer_agent)
         editing_task = build_editing_task(
             agent=editor_agent,
             writing_task=writing_task,
@@ -195,16 +138,24 @@ class CrewService:
         )
 
         crew = Crew(
-            agents=[research_agent, writer_agent, editor_agent],
-            tasks=[research_task, writing_task, editing_task],
+            agents=[writer_agent, editor_agent],
+            tasks=[writing_task, editing_task],
             verbose=False,
         )
-        crew_result = crew.kickoff(inputs={"topic": topic})
+        research_json = json.dumps(
+            {
+                "topic": topic,
+                "sources": [source.model_dump(mode="json") for source in sources],
+            },
+            ensure_ascii=False,
+        )
+        crew_result = crew.kickoff(
+            inputs={"topic": topic, "research_json": research_json}
+        )
         raw_output = getattr(crew_result, "raw", str(crew_result))
 
         blog_data = extract_json_object(raw_output)
-        blog = BlogDraft.model_validate(blog_data)
-        return blog
+        return BlogDraft.model_validate(blog_data)
 
     def _run_publish_pipeline(self, *, blog: BlogDraft) -> PublishResult:
         publish_tool = DevToPublisherTool(publishing_service=self._publishing_service)
@@ -277,14 +228,3 @@ class CrewService:
             blog.estimated_read_minutes = self._settings.max_read_minutes
             return
         blog.estimated_read_minutes = computed_minutes
-
-    @staticmethod
-    def _select_sources_for_attempt(
-        *, sources: list[ResearchSource], base_year: int, attempt_year: int
-    ) -> list[ResearchSource]:
-        if attempt_year == base_year:
-            cutoff = date(base_year, 1, 1)
-            return [source for source in sources if source.published_date >= cutoff]
-        return [
-            source for source in sources if source.published_date.year == attempt_year
-        ]

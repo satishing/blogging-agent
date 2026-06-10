@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     serper_api_key: str = Field(alias="SERPER_API_KEY")
     serper_api_url: str = "https://google.serper.dev/search"
     search_result_count: int = 10
+    # Number of query variants SourceService issues per topic (1 = topic only;
+    # 2 adds "<topic> latest"; 3 adds "<topic> <current-year>").
+    search_query_variants: int = 1
 
     # --- Publishing (Dev.to) ---
     devto_api_key: str | None = Field(default=None, alias="DEVTO_API_KEY")
@@ -50,6 +53,8 @@ class Settings(BaseSettings):
     # --- Content guardrails ---
     min_sources: int = 4
     min_source_year: int = Field(default_factory=lambda: date.today().year)
+    # How far below `min_source_year` SourceService may relax the freshness floor
+    # (in years) when there aren't enough sources at the target year.
     source_year_retry_steps: int = Field(default=3, ge=0)
     min_read_minutes: int = 6
     max_read_minutes: int = 8
