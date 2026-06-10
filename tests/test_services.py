@@ -257,3 +257,70 @@ def test_content_pipeline_propagates_guardrail_error(monkeypatch, tmp_path) -> N
         assert False, "Expected SourceGuardrailError"
     except SourceGuardrailError:
         pass
+
+
+def test_content_pipeline_falls_back_when_guardrail_exhausted(
+    monkeypatch, tmp_path
+) -> None:
+    """An exhausted writing guardrail degrades to a best-effort draft, not a crash."""
+    settings = _test_settings(tmp_path)
+    gathered = [_source_for_year(2026 - offset) for offset in range(4)]
+
+    class FakeSourceService:
+        def gather(self, **kwargs):
+            return gathered
+
+    service = CrewService(settings=settings, source_service=FakeSourceService())
+    guardrail_flags: list[bool] = []
+
+    def fake_run_content_crew(*, topic, sources, with_guardrail=True):
+        guardrail_flags.append(with_guardrail)
+        if with_guardrail:
+            raise Exception(
+                "Task failed guardrail validation after 2 retries. "
+                "Last error: Draft is too short (999 words)."
+            )
+        return BlogDraft(
+            topic=topic,
+            title="AI Agents: Best-effort draft",
+            summary="A practical guide for AI learners building production systems.",
+            content_markdown="word " * 1000,
+            tags=["ai"],
+            estimated_read_minutes=5,
+            sources=[_source_for_year(1999)],
+        )
+
+    monkeypatch.setattr(service, "_run_content_crew", fake_run_content_crew)
+
+    blog = service._run_content_pipeline(topic="AI Agents", min_year=2026)
+
+    # Strict run first, then a lenient fallback that succeeds.
+    assert guardrail_flags == [True, False]
+    assert blog.sources == gathered
+
+
+def test_content_pipeline_reraises_non_guardrail_errors(monkeypatch, tmp_path) -> None:
+    """Non-guardrail failures (network/LLM) propagate; no wasteful fallback run."""
+    settings = _test_settings(tmp_path)
+    gathered = [_source_for_year(2026 - offset) for offset in range(4)]
+
+    class FakeSourceService:
+        def gather(self, **kwargs):
+            return gathered
+
+    service = CrewService(settings=settings, source_service=FakeSourceService())
+    call_count = 0
+
+    def fake_run_content_crew(*, topic, sources, with_guardrail=True):
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError("LLM provider unreachable")
+
+    monkeypatch.setattr(service, "_run_content_crew", fake_run_content_crew)
+
+    try:
+        service._run_content_pipeline(topic="AI Agents", min_year=2026)
+        assert False, "Expected RuntimeError to propagate"
+    except RuntimeError:
+        pass
+    assert call_count == 1, "should not attempt the lenient fallback"

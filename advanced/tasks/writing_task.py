@@ -20,11 +20,25 @@ logger = get_logger(__name__)
 # complete article rather than a wall of text.
 _REQUIRED_SECTIONS = ("key takeaways", "conclusion", "references")
 _MIN_BODY_SECTIONS = 3
+# The guardrail accepts drafts within this fraction of the target band so a
+# near-miss (e.g. 1250 vs 1320) passes instead of burning retries. Egregiously
+# short/long drafts still fail and trigger a rewrite (then a graceful fallback).
+_LENGTH_TOLERANCE = 0.9
 
 
 def build_writing_task(
-    agent: Agent, *, min_words: int, max_words: int, min_sources: int
+    agent: Agent,
+    *,
+    min_words: int,
+    max_words: int,
+    min_sources: int,
+    with_guardrail: bool = True,
 ) -> Task:
+    guardrail = (
+        _build_readability_guardrail(min_words=min_words, max_words=max_words)
+        if with_guardrail
+        else None
+    )
     return Task(
         description=(
             "Write a complete, publication-ready technical blog on '{topic}' for AI "
@@ -56,9 +70,7 @@ def build_writing_task(
             "links. Non-obvious claims carry inline [n] citations."
         ),
         agent=agent,
-        guardrail=_build_readability_guardrail(
-            min_words=min_words, max_words=max_words
-        ),
+        guardrail=guardrail,
         guardrail_max_retries=2,
     )
 
@@ -72,16 +84,20 @@ def _build_readability_guardrail(*, min_words: int, max_words: int):
     here — subjective quality is left to the editor agent.
     """
 
+    # Accept a small margin around the target band so near-misses pass.
+    floor = round(min_words * _LENGTH_TOLERANCE)
+    ceiling = round(max_words / _LENGTH_TOLERANCE)
+
     def guardrail(output):
         text = getattr(output, "raw", str(output))
         word_count = len(text.split())
-        if word_count < min_words:
+        if word_count < floor:
             return (
                 False,
                 f"Draft is too short ({word_count} words). Expand to "
                 f"{min_words}-{max_words} words with more depth and examples.",
             )
-        if word_count > max_words:
+        if word_count > ceiling:
             return (
                 False,
                 f"Draft is too long ({word_count} words). Tighten to "

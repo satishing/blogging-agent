@@ -12,7 +12,13 @@ from advanced.agents import (
     build_writer_agent,
 )
 from advanced.config.settings import Settings
-from advanced.models import BlogDraft, PipelineResult, PublishResult, ResearchSource
+from advanced.models import (
+    BlogDraft,
+    EditedBlog,
+    PipelineResult,
+    PublishResult,
+    ResearchSource,
+)
 from advanced.tasks import (
     build_editing_task,
     build_outline_task,
@@ -38,6 +44,16 @@ from .source_service import SourceGuardrailError, SourceService
 logger = get_logger(__name__)
 
 __all__ = ["CrewService", "SourceGuardrailError"]
+
+
+def _is_guardrail_failure(error: Exception) -> bool:
+    """True when an exception is CrewAI's exhausted-guardrail error.
+
+    CrewAI raises a plain Exception ("Task failed guardrail validation after N
+    retries...") rather than a typed error, so we match on its message. Any
+    other failure (LLM/network/parse) is left to propagate.
+    """
+    return "guardrail validation" in str(error).lower()
 
 
 class CrewService:
@@ -123,15 +139,45 @@ class CrewService:
             retry_steps=self._settings.source_year_retry_steps,
         )
 
-        blog = self._run_content_crew(topic=topic, sources=sources)
+        blog = self._generate_blog_resiliently(topic=topic, sources=sources)
         blog.sources = sources
         self._require_minimum_sources(blog=blog)
         self._finalize_references(blog=blog)
         self._finalize_read_minutes(blog=blog)
         return blog
 
-    def _run_content_crew(
+    def _generate_blog_resiliently(
         self, *, topic: str, sources: list[ResearchSource]
+    ) -> BlogDraft:
+        """Run the content crew, degrading gracefully if the guardrail can't converge.
+
+        The writing guardrail nudges the model toward the target length/structure
+        via bounded retries. When the model simply won't hit the band, CrewAI
+        raises — rather than crash the whole run over a slightly-short blog, we
+        retry once without the strict length guardrail and accept the best-effort
+        draft (still gated by the BlogDraft word-count floor). The shortfall is
+        surfaced by `_finalize_read_minutes` as a warning, not a failure.
+        """
+        try:
+            return self._run_content_crew(topic=topic, sources=sources)
+        except Exception as error:
+            if not _is_guardrail_failure(error):
+                raise
+            logger.warning(
+                "Writing guardrail did not converge (%s). Falling back to a "
+                "best-effort draft without strict length enforcement.",
+                error,
+            )
+            return self._run_content_crew(
+                topic=topic, sources=sources, with_guardrail=False
+            )
+
+    def _run_content_crew(
+        self,
+        *,
+        topic: str,
+        sources: list[ResearchSource],
+        with_guardrail: bool = True,
     ) -> BlogDraft:
         # The shared expense (the LLM connection) lives on `self._llm`; agents and
         # tasks are cheap to build per run and CrewAI doesn't reuse state anyway.
@@ -150,6 +196,7 @@ class CrewService:
             min_words=min_words,
             max_words=max_words,
             min_sources=self._settings.min_sources,
+            with_guardrail=with_guardrail,
         )
         editing_task = build_editing_task(
             agent=editor_agent,
@@ -177,18 +224,20 @@ class CrewService:
 
     @staticmethod
     def _blog_from_crew_result(crew_result) -> BlogDraft:
-        """Prefer the schema-validated pydantic output; fall back to raw JSON.
+        """Build a BlogDraft from the editor's (sources-free) EditedBlog output.
 
-        `output_pydantic` on the editing task makes CrewAI parse and validate the
-        final output into a BlogDraft (retrying the agent on malformed output).
-        The raw-text path remains as a defensive fallback in case a future model
-        or CrewAI version returns only text.
+        `output_pydantic=EditedBlog` makes CrewAI parse and validate the editor's
+        content into an EditedBlog (retrying the agent on malformed output). We
+        promote it to a BlogDraft here; sources are attached by the caller. The
+        raw-text path is a defensive fallback if only text is returned.
         """
-        blog = getattr(crew_result, "pydantic", None)
-        if isinstance(blog, BlogDraft):
-            return blog
-        raw_output = getattr(crew_result, "raw", str(crew_result))
-        return BlogDraft.model_validate(extract_json_object(raw_output))
+        edited = getattr(crew_result, "pydantic", None)
+        if not isinstance(edited, EditedBlog):
+            raw_output = getattr(crew_result, "raw", str(crew_result))
+            data = extract_json_object(raw_output)
+            data.pop("sources", None)  # sources are overridden by the caller
+            edited = EditedBlog.model_validate(data)
+        return BlogDraft(**edited.model_dump())
 
     def _run_publish_pipeline(self, *, blog: BlogDraft) -> PublishResult:
         publish_tool = DevToPublisherTool(publishing_service=self._publishing_service)

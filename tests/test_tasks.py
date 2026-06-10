@@ -1,7 +1,7 @@
 from crewai import LLM
 
 from advanced.agents import build_editor_agent, build_planner_agent, build_writer_agent
-from advanced.models import BlogDraft
+from advanced.models import EditedBlog
 from advanced.tasks import build_editing_task, build_outline_task, build_writing_task
 from advanced.tasks.writing_task import _build_readability_guardrail
 
@@ -35,8 +35,27 @@ def test_task_factories_include_expected_guardrail_prompts() -> None:
     # Writer spec pins the length band and required structure.
     assert "1320-1760 words" in writing_task.description
     assert "## References" in writing_task.description
-    # Editor serializes to a validated BlogDraft via output_pydantic.
-    assert editing_task.output_pydantic is BlogDraft
+    # Editor serializes to a sources-free EditedBlog via output_pydantic
+    # (keeps the response schema free of HttpUrl's unsupported `format: uri`).
+    assert editing_task.output_pydantic is EditedBlog
+
+
+def test_edited_blog_schema_has_no_unsupported_uri_format() -> None:
+    # OpenAI structured output rejects `format: uri` (emitted by HttpUrl). The
+    # editor schema must therefore carry no `uri`-formatted field.
+    def _formats(node) -> list[str]:
+        found: list[str] = []
+        if isinstance(node, dict):
+            if node.get("format"):
+                found.append(node["format"])
+            for value in node.values():
+                found.extend(_formats(value))
+        elif isinstance(node, list):
+            for item in node:
+                found.extend(_formats(item))
+        return found
+
+    assert "uri" not in _formats(EditedBlog.model_json_schema())
 
 
 def test_writing_guardrail_enforces_length_structure_and_citations() -> None:

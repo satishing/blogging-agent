@@ -14,14 +14,22 @@ from .research import ResearchSource
 MIN_CONTENT_WORDS = 400
 
 
-class BlogDraft(BaseModel):
+class EditedBlog(BaseModel):
+    """The editor's output: article content only, no sources.
+
+    This is the schema handed to the LLM via `output_pydantic`. It deliberately
+    excludes `sources` — those are gathered deterministically and overridden
+    after generation, so the editor shouldn't echo them. Excluding them also
+    keeps the JSON schema free of `HttpUrl` (`format: uri`), which OpenAI's
+    structured-output mode rejects.
+    """
+
     topic: str = Field(min_length=3)
     title: str = Field(min_length=12, max_length=130)
     summary: str = Field(min_length=40)
     content_markdown: str = Field(min_length=500)
     tags: list[str] = Field(default_factory=list)
     estimated_read_minutes: int = Field(ge=1, le=20)
-    sources: list[ResearchSource] = Field(default_factory=list)
 
     @field_validator("content_markdown")
     @classmethod
@@ -43,6 +51,12 @@ class BlogDraft(BaseModel):
             if tag not in deduped:
                 deduped.append(tag)
         return deduped[:4] or ["ai", "learning"]
+
+
+class BlogDraft(EditedBlog):
+    """Full blog draft: editor content plus the deterministic source list."""
+
+    sources: list[ResearchSource] = Field(default_factory=list)
 
 
 class PublishResult(BaseModel):
