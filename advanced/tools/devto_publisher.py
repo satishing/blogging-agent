@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +11,24 @@ import requests
 
 from advanced.config import Settings, reveal
 from advanced.models import BlogDraft, PublishResult
+
+# Dev.to tags must be alphanumeric (no spaces, hyphens, or punctuation) and an
+# article accepts at most four. We strip anything else rather than let the API
+# reject the whole publish with a 422.
+_MAX_DEVTO_TAGS = 4
+
+
+class DevToPublishError(RuntimeError):
+    """Dev.to rejected or failed the publish request (carries status + body)."""
+
+
+def _devto_tags(tags: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    for tag in tags:
+        normalized = re.sub(r"[^a-z0-9]", "", tag.lower())
+        if normalized and normalized not in cleaned:
+            cleaned.append(normalized)
+    return cleaned[:_MAX_DEVTO_TAGS]
 
 
 class DevToPublisherClient:
@@ -32,7 +51,7 @@ class DevToPublisherClient:
             "article": {
                 "title": blog.title,
                 "body_markdown": blog.content_markdown,
-                "tags": blog.tags,
+                "tags": _devto_tags(blog.tags),
                 "published": not self._settings.publish_as_draft,
                 "description": blog.summary[:220],
             }
@@ -66,11 +85,33 @@ class DevToPublisherClient:
                     headers=headers,
                     timeout=30,
                 )
-                response.raise_for_status()
-                return response.json()
             except requests.RequestException as error:
+                # Network/transport problem — worth retrying.
                 last_error = error
                 if attempt == attempts:
                     break
                 time.sleep(attempt * 2)
-        raise RuntimeError("Dev.to publish failed after retries") from last_error
+                continue
+
+            if response.status_code < 400:
+                return response.json()
+
+            # A 4xx is a client error (bad tags, duplicate, etc.) — retrying
+            # won't help, so fail fast and surface what Dev.to actually said.
+            if 400 <= response.status_code < 500:
+                raise DevToPublishError(
+                    f"Dev.to rejected the article ({response.status_code}): "
+                    f"{response.text[:500]}"
+                )
+
+            # 5xx — server-side, retry.
+            last_error = requests.HTTPError(
+                f"{response.status_code} from Dev.to: {response.text[:200]}"
+            )
+            if attempt == attempts:
+                break
+            time.sleep(attempt * 2)
+
+        raise DevToPublishError(
+            f"Dev.to publish failed after {attempts} attempts: {last_error}"
+        ) from last_error

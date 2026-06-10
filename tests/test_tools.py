@@ -1,4 +1,5 @@
 from advanced.config.settings import Settings
+from advanced.tools.devto_publisher import _devto_tags
 from advanced.tools.search_tool import SerperSearchClient
 
 
@@ -35,3 +36,14 @@ def test_search_client_normalizes_results(monkeypatch) -> None:
     assert results[0]["title"] == "AI agents in 2026"
     assert results[0]["url"] == "https://example.com/ai-agents"
     assert results[0]["published_date"].startswith("2026")
+
+
+def test_devto_tags_are_alphanumeric_and_capped() -> None:
+    # Dev.to rejects tags with hyphens/spaces/punctuation and allows at most 4.
+    tags = _devto_tags(
+        ["Multi-Agent", "AI Agents", "crew.ai", "LLMOps", "ai", "extra-tag"]
+    )
+
+    assert tags == ["multiagent", "aiagents", "crewai", "llmops"]
+    assert all(tag.isalnum() for tag in tags)
+    assert len(tags) <= 4
